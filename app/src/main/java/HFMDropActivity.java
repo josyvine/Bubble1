@@ -69,7 +69,6 @@ public class HFMDropActivity extends Activity {
     private DropRequestAdapter adapter;
     private List<DropRequest> requestList;
 
-    // --- NEW: BroadcastReceiver for download errors ---
     private BroadcastReceiver downloadErrorReceiver;
 
     private static final String[] ADJECTIVES = {"Red", "Blue", "Green", "Silent", "Fast", "Brave", "Ancient", "Wandering", "Golden", "Iron"};
@@ -85,7 +84,6 @@ public class HFMDropActivity extends Activity {
         initializeFirebase();
         setupRecyclerView();
         setupListeners();
-        // --- NEW: Set up the broadcast receiver ---
         setupBroadcastReceiver();
     }
 
@@ -93,7 +91,6 @@ public class HFMDropActivity extends Activity {
     protected void onStart() {
         super.onStart();
         checkCurrentUser();
-        // --- NEW: Register the broadcast receiver ---
         LocalBroadcastManager.getInstance(this).registerReceiver(downloadErrorReceiver, new IntentFilter(DownloadService.ACTION_DOWNLOAD_ERROR));
     }
 
@@ -101,7 +98,6 @@ public class HFMDropActivity extends Activity {
     protected void onStop() {
         super.onStop();
         removeListener();
-        // --- NEW: Unregister the broadcast receiver ---
         LocalBroadcastManager.getInstance(this).unregisterReceiver(downloadErrorReceiver);
     }
 
@@ -162,7 +158,6 @@ public class HFMDropActivity extends Activity {
         });
     }
 
-    // --- NEW: Method to define the broadcast receiver ---
     private void setupBroadcastReceiver() {
         downloadErrorReceiver = new BroadcastReceiver() {
             @Override
@@ -179,7 +174,6 @@ public class HFMDropActivity extends Activity {
         };
     }
 
-    // --- NEW: Method to build and show the error alert dialog ---
     private void showErrorDialog(String errorReport) {
         if (isFinishing() || isDestroyed()) {
             return;
@@ -328,13 +322,20 @@ public class HFMDropActivity extends Activity {
                 @Override
                 public void onSuccess(Void aVoid) {
                     Log.d(TAG, "Drop request accepted. Starting download service.");
-                    Intent intent = new Intent(HFMDropActivity.this, DownloadService.class);
-                    intent.putExtra("drop_request_id", request.id);
-                    intent.putExtra("sender_id", request.senderId);
-                    intent.putExtra("original_filename", request.filename);
-                    intent.putExtra("cloaked_filename", request.cloakedFilename);
-                    intent.putExtra("filesize", request.filesize);
-                    ContextCompat.startForegroundService(HFMDropActivity.this, intent);
+                    
+                    // --- MODIFICATION: Start DownloadService AND the new Progress Activity ---
+                    Intent serviceIntent = new Intent(HFMDropActivity.this, DownloadService.class);
+                    serviceIntent.putExtra("drop_request_id", request.id);
+                    serviceIntent.putExtra("sender_id", request.senderId);
+                    serviceIntent.putExtra("original_filename", request.filename);
+                    serviceIntent.putExtra("cloaked_filename", request.cloakedFilename);
+                    serviceIntent.putExtra("filesize", request.filesize);
+                    ContextCompat.startForegroundService(HFMDropActivity.this, serviceIntent);
+                    
+                    // Start the progress UI
+                    Intent progressIntent = new Intent(HFMDropActivity.this, DropProgressActivity.class);
+                    progressIntent.putExtra("is_sender", false); // This is the receiver
+                    startActivity(progressIntent);
                 }
             })
             .addOnFailureListener(new OnFailureListener() {
