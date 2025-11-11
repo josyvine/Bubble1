@@ -83,9 +83,8 @@ dependencies {
     implementation 'com.google.firebase:firebase-firestore'
 
     // --- START OF CORRECTION ---
-    // TORRENT CLIENT - Using a modern version of org.libtorrent4j from Maven Central.
-    // This version's API matches the code in TorrentManager.java.
-    def libtorrentVersion = "2.1.2.0"
+    // TORRENT CLIENT - Updated version to 2.1.0-38 (latest working release)
+    def libtorrentVersion = "2.1.0-38"
     implementation "org.libtorrent4j:libtorrent4j:$libtorrentVersion"
     // Including native libraries for all common Android architectures.
     implementation "org.libtorrent4j:libtorrent4j-android-arm64:$libtorrentVersion"
