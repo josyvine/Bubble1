@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="crop_timer_options">
+        <item>5 seconds (default)</item>
+        <item>10 seconds</item>
+        <item>15 seconds</item>
+        <item>20 seconds</item>
+    </string-array>
+</resources>
+
