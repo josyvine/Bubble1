@@ -1,77 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"> 
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.app.bubble">
 
-    <!-- Permissions to read and write files -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <!-- NEW: Permission to access the internet for the contact form -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
-
-    <!--
-    The 'requestLegacyExternalStorage' attribute is REQUIRED for targetSdkVersion 29
-    to allow the app's file saving logic to work correctly on Android 10.
-    -->
     <application
         android:allowBackup="true"
-        android:icon="@drawable/txtify"
-        android:label="@string/app_name"
-        android:roundIcon="@drawable/txtify"
+        android:icon="@drawable/bubble"
+        android:label="bubble"
+        android:roundIcon="@drawable/bubble"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme"
-        android:requestLegacyExternalStorage="true"
-        android:name=".MyApplication">
+        android:theme="@style/Theme.AppCompat.Light"> 
+        <!-- FIX: Changed theme to an AppCompat theme -->
 
-        <!-- NEW: AdMob App ID Configuration -->
+        <meta-data
+            android:name="com.google.android.gms.vision.DEPENDENCIES"
+            android:value="ocr" />
+
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-2223803405403727~8067739426"/>
+            android:value="ca-app-pub-9389941039952321~5623734797"/>
 
-        <!-- Main Activity Declaration -->
-        <activity
-            android:name=".MainActivity"
-            android:label="@string/app_name"
-            android:windowSoftInputMode="adjustResize"
+
+        <activity android:name=".MainActivity"
             android:exported="true">
-
-            <!-- This intent-filter makes the app show up in the launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!--
-            This intent-filter allows the app to be an option when you
-            tap "Open with" on a file in another file manager.
-            -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.EDIT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
         </activity>
 
-        <!-- Help Activity Declaration -->
+        <!-- Registering the new Settings Activity -->
+        <activity
+            android:name=".SettingsActivity"
+            android:label="Settings"
+            android:theme="@style/Theme.AppCompat.Light" /> 
+        <!-- FIX: Changed theme to an AppCompat theme -->
+
+        <!-- Registering the new Help Activity -->
         <activity
             android:name=".HelpActivity"
-            android:label="@string/help_title"
-            android:parentActivityName=".MainActivity" />
+            android:label="Help"
+            android:theme="@style/Theme.AppCompat.Light" /> 
+        <!-- FIX: Changed theme to an AppCompat theme -->
 
-        <!-- Zip Contents Activity Declaration -->
-        <activity
-            android:name=".ZipContentsActivity"
-            android:label="ZIP Contents"
-            android:parentActivityName=".MainActivity" />
-
-        <!-- NEW: Contact Activity Declaration -->
-        <activity
-            android:name=".ContactActivity"
-            android:label="@string/contact_title"
-            android:parentActivityName=".HelpActivity" />
+        <service
+            android:name=".FloatingTranslatorService"
+            android:enabled="true"
+            android:exported="false" />
 
     </application>
+
 </manifest>
