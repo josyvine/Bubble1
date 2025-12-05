@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".MyApplication"
         android:allowBackup="true"
         android:icon="@drawable/bubble"
         android:label="bubble"
@@ -19,9 +20,10 @@
             android:name="com.google.android.gms.vision.DEPENDENCIES"
             android:value="ocr" />
 
+        <!-- NEW: Updated AdMob App ID -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-9389941039952321~5623734797"/>
+            android:value="ca-app-pub-2223803405403727~3540804071"/>
 
 
         <activity android:name=".MainActivity"
