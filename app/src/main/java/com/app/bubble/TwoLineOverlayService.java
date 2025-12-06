@@ -7,6 +7,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -27,6 +28,7 @@ public class TwoLineOverlayService extends Service {
 
     private WindowManager.LayoutParams params;
     private int screenHeight;
+    private static final int SCROLL_THRESHOLD = 150; // Pixels from bottom to trigger scroll
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -37,7 +39,8 @@ public class TwoLineOverlayService extends Service {
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        screenHeight = getResources().getDisplayMetrics().heightPixels;
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        screenHeight = metrics.heightPixels;
 
         showOverlay();
     }
@@ -73,6 +76,7 @@ public class TwoLineOverlayService extends Service {
         btnClose.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                GlobalScrollService.stopScroll();
                 stopSelf();
             }
         });
@@ -80,6 +84,8 @@ public class TwoLineOverlayService extends Service {
         btnDone.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                GlobalScrollService.stopScroll();
+
                 // Calculate the area between lines
                 int[] topLocation = new int[2];
                 lineTop.getLocationOnScreen(topLocation);
@@ -97,24 +103,20 @@ public class TwoLineOverlayService extends Service {
                 }
 
                 // Create the Rect for capture
+                // We use the full width, and the Y coordinates of the lines
                 Rect selectionRect = new Rect(0, topY, getResources().getDisplayMetrics().widthPixels, bottomY);
 
                 // Pass this to the Main Translator Service
                 Intent intent = new Intent(TwoLineOverlayService.this, FloatingTranslatorService.class);
-                // We restart the service to pass the new intent data, or you can bind to it.
-                // For this architecture, we will simulate a crop finish.
-                // Ideally, FloatingTranslatorService should expose a static method or receiver, 
-                // but here we launch it and let it handle the projection check.
+                intent.putExtra("RECT", selectionRect);
+                // Flag to tell the service to copy to clipboard
+                intent.putExtra("COPY_TO_CLIPBOARD", true); 
                 
-                // Note: In a real scenario, you might need a BroadcastReceiver or Singleton logic 
-                // to pass this data cleanly if the service is already running.
-                // For now, we will close this overlay and let the user know.
+                // We assume FloatingTranslatorService is designed to receive updates via startService
+                // (which calls onStartCommand)
+                startService(intent);
                 
-                // Trigger logic in FloatingTranslatorService would go here. 
-                // Since FloatingTranslatorService listens for CropSelectionView, we simulate that flow.
-                // For simplicity in this code generation, we will assume FloatingTranslatorService is accessible.
-                
-                Toast.makeText(TwoLineOverlayService.this, "Capturing area...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(TwoLineOverlayService.this, "Processing...", Toast.LENGTH_SHORT).show();
                 
                 // Clean up this overlay
                 stopSelf();
@@ -144,13 +146,22 @@ public class TwoLineOverlayService extends Service {
                         
                         view.setY(newY);
 
-                        // Auto-Scroll Logic for Bottom Line
+                        // *** DRAG-TO-SCROLL LOGIC ***
+                        // Only apply auto-scroll to the Bottom Line
                         if (view.getId() == R.id.line_bottom) {
-                            if (event.getRawY() >= screenHeight - 100) {
-                                // User is dragging bottom line at bottom edge
-                                GlobalScrollService.performGlobalScroll();
+                            if (event.getRawY() >= screenHeight - SCROLL_THRESHOLD) {
+                                // User is dragging bottom line at bottom edge -> SCROLL DOWN
+                                GlobalScrollService.startSmoothScroll();
+                            } else {
+                                // User moved away from edge -> STOP SCROLL
+                                GlobalScrollService.stopScroll();
                             }
                         }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                        // Always stop scrolling on release
+                        GlobalScrollService.stopScroll();
                         return true;
 
                     default:
@@ -166,6 +177,7 @@ public class TwoLineOverlayService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        GlobalScrollService.stopScroll();
         if (overlayView != null) {
             windowManager.removeView(overlayView);
         }
