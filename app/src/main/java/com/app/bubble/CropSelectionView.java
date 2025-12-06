@@ -124,6 +124,15 @@ public class CropSelectionView extends View {
                 // Stop scrolling immediately when finger lifts
                 GlobalScrollService.stopScroll();
                 return true;
+
+            case MotionEvent.ACTION_CANCEL:
+                // *** FIX FOR GLITCH ***
+                // When the system takes over touch events (during scroll), it sends CANCEL.
+                // We MUST stop scrolling logic, but we MUST NOT reset coordinates.
+                // Just stop the timer and the scroll service.
+                GlobalScrollService.stopScroll();
+                autoCloseHandler.removeCallbacks(autoCloseRunnable);
+                return true;
         }
         return false;
     }
