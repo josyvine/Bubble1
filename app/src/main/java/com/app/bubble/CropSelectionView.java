@@ -38,7 +38,6 @@ public class CropSelectionView extends View {
         borderPaint.setStrokeWidth(5f);
         borderPaint.setStyle(Paint.Style.STROKE);
 
-        // *** MODIFICATION START ***
         // Read the user-configured timer duration from SharedPreferences.
         // We use the constants defined in SettingsActivity for consistency.
         SharedPreferences prefs = getContext().getSharedPreferences(
@@ -47,20 +46,23 @@ public class CropSelectionView extends View {
         );
         // Load the saved duration, defaulting to 5000ms (5 seconds) if not found.
         timeoutDuration = prefs.getLong(SettingsActivity.KEY_TIMER_DURATION, 5000L);
-        // *** MODIFICATION END ***
 
         autoCloseRunnable = new Runnable() {
             @Override
             public void run() {
                 // Tell the service that selection is finished
-                FloatingTranslatorService service = (FloatingTranslatorService) getContext();
-                Rect finalRect = new Rect(
-                    (int) selectionRect.left,
-                    (int) selectionRect.top,
-                    (int) selectionRect.right,
-                    (int) selectionRect.bottom
-                );
-                service.onCropFinished(finalRect);
+                try {
+                    FloatingTranslatorService service = (FloatingTranslatorService) getContext();
+                    Rect finalRect = new Rect(
+                        (int) selectionRect.left,
+                        (int) selectionRect.top,
+                        (int) selectionRect.right,
+                        (int) selectionRect.bottom
+                    );
+                    service.onCropFinished(finalRect);
+                } catch (ClassCastException e) {
+                    e.printStackTrace();
+                }
             }
         };
     }
@@ -109,4 +111,3 @@ public class CropSelectionView extends View {
         autoCloseHandler.postDelayed(autoCloseRunnable, timeoutDuration);
     }
 }
-
