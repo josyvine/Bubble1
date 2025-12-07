@@ -86,6 +86,10 @@ public class FloatingTranslatorService extends Service {
     private String latestTranslation = "";
     private boolean isTranslationReady = false;
 
+    // NEW: Accumulator for Endless Scrolling
+    private StringBuilder continuousOcrBuilder = new StringBuilder();
+    private boolean isFirstChunk = true;
+
     // Language Management
     private String[] languages = {"English", "Spanish", "French", "German", "Hindi", "Bengali", "Marathi", "Telugu", "Tamil", "Malayalam"};
     private String[] languageCodes = {"en", "es", "fr", "de", "hi", "bn", "mr", "te", "ta", "ml"};
@@ -146,12 +150,10 @@ public class FloatingTranslatorService extends Service {
 
                 this.shouldCopyToClipboard = copyToClip;
 
-                // CHECK: Do we have burst images waiting from the manual scroll?
-                if (!capturedBitmaps.isEmpty()) {
-                    // Yes, this is the end of the Two-Line flow.
+                // Trigger final processing (Flush the remaining bitmaps)
+                if (isBurstMode || !capturedBitmaps.isEmpty()) {
                     processTwoLineResult(selectionRect);
                 } else {
-                    // No, this is likely a standard single capture or fallback
                     onCropFinished(selectionRect);
                 }
             }
@@ -164,9 +166,8 @@ public class FloatingTranslatorService extends Service {
         super.onCreate();
         sInstance = this;
 
-        // --- FIX: Start Foreground Service to prevent app closing ---
+        // Start Foreground Service to prevent app closing
         startMyForeground();
-        // ------------------------------------------------------------
 
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         mediaProjectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -183,7 +184,7 @@ public class FloatingTranslatorService extends Service {
         setupCloseTarget();
     }
 
-    // --- NEW METHOD: Creates the Notification ---
+    // Creates the Notification
     private void startMyForeground() {
         String CHANNEL_ID = "bubble_translator_channel";
 
@@ -196,7 +197,6 @@ public class FloatingTranslatorService extends Service {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
         }
 
-        // Create an intent that opens the app when you click the notification
         Intent notificationIntent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
 
@@ -205,7 +205,6 @@ public class FloatingTranslatorService extends Service {
             notification = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Bubble Translator is Running")
                     .setContentText("Tap to open settings")
-                    // If you have a custom icon use R.drawable.ic_launcher, otherwise use system icon
                     .setSmallIcon(android.R.drawable.ic_menu_search) 
                     .setContentIntent(pendingIntent)
                     .build();
@@ -218,7 +217,6 @@ public class FloatingTranslatorService extends Service {
                     .build();
         }
 
-        // ID must be > 0
         startForeground(1337, notification);
     }
 
@@ -239,12 +237,10 @@ public class FloatingTranslatorService extends Service {
         closeRegionHeight = screenHeight / 5;
     }
 
-    // Helper to ask for permission again if it was lost
     private void requestPermissionRestart() {
         Toast.makeText(this, "Permission lost. Please allow again.", Toast.LENGTH_SHORT).show();
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        // We can add an extra here to tell MainActivity to auto-launch the permission dialog
         intent.putExtra("AUTO_REQUEST_PERMISSION", true);
         startActivity(intent);
     }
@@ -254,10 +250,10 @@ public class FloatingTranslatorService extends Service {
         if (mediaProjection != null) {
             isBurstMode = true;
             capturedBitmaps.clear();
+            continuousOcrBuilder.setLength(0); // Clear previous text
+            isFirstChunk = true; // Reset chunk flag
 
-            // Start capturing full screen continuously
             if (imageReader == null) {
-                // Full screen rect
                 currentCropRect = new Rect(0, 0, screenWidth, screenHeight);
                 startCapture(currentCropRect);
             }
@@ -266,13 +262,13 @@ public class FloatingTranslatorService extends Service {
         }
     }
 
-    // Called by TwoLineOverlayService to pause/stop recording (but keep images in memory)
+    // Called by TwoLineOverlayService to pause/stop recording
     public void stopBurstCapture() {
         isBurstMode = false;
-        stopCapture(); // This closes the reader, but capturedBitmaps list remains full
+        stopCapture(); 
     }
 
-    // Called for Single-Box selection (Original Feature)
+    // Called for Single-Box selection
     public void onCropFinished(Rect selectedRect) {
         if (cropSelectionView != null) {
             windowManager.removeView(cropSelectionView);
@@ -282,7 +278,6 @@ public class FloatingTranslatorService extends Service {
 
         if (mediaProjection != null) {
             this.currentCropRect = selectedRect;
-            // Clear previous captures for single mode
             capturedBitmaps.clear();
             startCapture(selectedRect);
         } else {
@@ -316,7 +311,7 @@ public class FloatingTranslatorService extends Service {
                         image = reader.acquireLatestImage();
                         if (image != null) {
 
-                            // Throttling for Burst Mode
+                            // Burst Mode Throttling
                             if (isBurstMode) {
                                 long currentTime = System.currentTimeMillis();
                                 if (currentTime - lastCaptureTime < CAPTURE_INTERVAL_MS) {
@@ -335,13 +330,10 @@ public class FloatingTranslatorService extends Service {
                             Bitmap fullBitmap = Bitmap.createBitmap(screenWidth + rowPadding / pixelStride, screenHeight, Bitmap.Config.ARGB_8888);
                             fullBitmap.copyPixelsFromBuffer(buffer);
 
-                            // Safely crop based on mode
                             Bitmap capturedFrame;
                             if (isBurstMode) {
-                                // In burst mode, we capture the full screen. We will crop later based on lines.
-                                capturedFrame = fullBitmap; // Keep full
+                                capturedFrame = fullBitmap; 
                             } else {
-                                // Single mode: Crop immediately
                                 int left = Math.max(0, cropRect.left);
                                 int top = Math.max(0, cropRect.top);
                                 int width = Math.min(cropRect.width(), fullBitmap.getWidth() - left);
@@ -360,7 +352,13 @@ public class FloatingTranslatorService extends Service {
                                 capturedBitmaps.add(capturedFrame);
                             }
 
-                            // If NOT in burst mode, this is a single shot, so we finish immediately.
+                            // --- BATCH PROCESSING (Endless Scroll Logic) ---
+                            // If we have collected enough frames (e.g. 12 frames ~= 2 seconds),
+                            // process them immediately to save memory and avoid crashes.
+                            if (isBurstMode && capturedBitmaps.size() >= 12) {
+                                processIntermediateChunk();
+                            }
+
                             if (!isBurstMode) {
                                 stopCapture();
                                 processSingleShotResult();
@@ -389,68 +387,147 @@ public class FloatingTranslatorService extends Service {
         }
     }
 
-    // Logic for Standard Blue Box
+    // --- NEW: Processes a chunk of images in the background ---
+    private void processIntermediateChunk() {
+        final List<Bitmap> chunkToProcess = new ArrayList<>(capturedBitmaps);
+        
+        // Clear main list but KEEP the last frame to ensure overlap for the next chunk
+        Bitmap lastFrame = capturedBitmaps.get(capturedBitmaps.size() - 1);
+        capturedBitmaps.clear();
+        capturedBitmaps.add(lastFrame);
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                Bitmap stitched = ImageStitcher.stitchImages(chunkToProcess);
+                if (stitched != null) {
+                    // Crop Top if it's the very first chunk (Green Line)
+                    // For middle chunks, we keep full height to capture everything scrolled
+                    if (isFirstChunk && currentCropRect != null && currentCropRect.top > 0) {
+                         int cropTop = Math.min(currentCropRect.top, stitched.getHeight());
+                         int height = stitched.getHeight() - cropTop;
+                         if (height > 0) {
+                             Bitmap cropped = Bitmap.createBitmap(stitched, 0, cropTop, stitched.getWidth(), height);
+                             performOcrSync(cropped);
+                         }
+                    } else {
+                        performOcrSync(stitched);
+                    }
+                    isFirstChunk = false;
+                }
+                // Cleanup chunk bitmaps
+                for (Bitmap b : chunkToProcess) {
+                    if (b != lastFrame) b.recycle(); // Don't recycle the one we kept
+                }
+            }
+        });
+    }
+
     private void processSingleShotResult() {
         if (!capturedBitmaps.isEmpty()) {
             performOcr(capturedBitmaps.get(0));
         }
     }
 
-    // Logic for Two-Line Scrolling Flow
+    // --- FINAL Processing when User clicks STOP ---
     private void processTwoLineResult(Rect limitRect) {
-        if (capturedBitmaps.isEmpty()) {
-            Toast.makeText(this, "No content captured.", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        // If we have any remaining frames, process them now
+        final List<Bitmap> remainingFrames = new ArrayList<>(capturedBitmaps);
+        capturedBitmaps.clear();
 
-        // 1. Stitch all captured full-screen frames into one tall image
-        Bitmap longBitmap = ImageStitcher.stitchImages(capturedBitmaps);
-
-        if (longBitmap == null) {
-            Toast.makeText(this, "Stitching failed.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        try {
-            // 2. Apply the Green Line (Top) and Red Line (Bottom) Crop
-            int greenLineY = limitRect.top;
-            int redLineY = limitRect.bottom;
-
-            // FIX: Check if stitching actually created a long image.
-            // If the height is roughly the same as one screen, it means we didn't scroll (or stitch failed).
-            // In that case, we must crop using standard coordinates, NOT "cut from bottom".
-            
-            boolean isLongScreenshot = longBitmap.getHeight() > (screenHeight * 1.05); // 5% tolerance
-            Bitmap finalCropped;
-            
-            if (isLongScreenshot) {
-                // Logic for Long Scrolling Screenshot
-                int cutFromTop = greenLineY;
-                int cutFromBottom = screenHeight - redLineY;
-                int finalHeight = longBitmap.getHeight() - cutFromTop - cutFromBottom;
-
-                if (finalHeight <= 50) {
-                    // Fallback to avoid crash
-                    finalCropped = longBitmap;
-                } else {
-                    finalCropped = Bitmap.createBitmap(longBitmap, 0, cutFromTop, longBitmap.getWidth(), finalHeight);
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                Bitmap stitched = ImageStitcher.stitchImages(remainingFrames);
+                
+                if (stitched == null && continuousOcrBuilder.length() == 0) {
+                    // Nothing captured at all
+                    handler.post(() -> Toast.makeText(FloatingTranslatorService.this, "Capture failed.", Toast.LENGTH_SHORT).show());
+                    return;
                 }
-            } else {
-                // Logic for Single Screen (Short scroll or no scroll)
-                int height = redLineY - greenLineY;
-                if (height <= 0) height = 100; // Safety
-                finalCropped = Bitmap.createBitmap(longBitmap, 0, greenLineY, longBitmap.getWidth(), height);
+
+                if (stitched != null) {
+                    int greenLineY = limitRect.top;
+                    int redLineY = limitRect.bottom;
+                    int singleScreenHeight = redLineY - greenLineY;
+                    
+                    // --- FIX FOR SINGLE SENTENCE (The "|" Issue) ---
+                    // If height is small (Single Screen), crop exactly between Green and Red lines.
+                    // If height is large (Scrolled), crop Bottom using Red Line logic.
+                    
+                    Bitmap finalCropped;
+                    if (stitched.getHeight() < screenHeight * 1.5) {
+                        // Short Image (Single Sentence) -> Exact Crop
+                        // If it was first chunk, we might have already cropped top. 
+                        // But for a single sentence flow, isFirstChunk is still true or we just stitch once.
+                        
+                        // We recalculate relative to the stitched image
+                        int cropHeight = Math.min(singleScreenHeight, stitched.getHeight());
+                        if (cropHeight <= 0) cropHeight = 50;
+                        
+                        // Use GreenLineY as top, but clamp if image is smaller (shouldn't happen in single mode)
+                        int cropY = Math.min(greenLineY, stitched.getHeight() - cropHeight);
+                        if (cropY < 0) cropY = 0;
+                        
+                        finalCropped = Bitmap.createBitmap(stitched, 0, cropY, stitched.getWidth(), cropHeight);
+                        
+                    } else {
+                        // Long Image (Endless Scroll) -> Crop Bottom
+                        // We only care about the Red Line (Bottom limit) here
+                        int cutFromBottom = screenHeight - redLineY;
+                        int newHeight = stitched.getHeight() - cutFromBottom;
+                        if (newHeight > 0) {
+                             finalCropped = Bitmap.createBitmap(stitched, 0, 0, stitched.getWidth(), newHeight);
+                        } else {
+                             finalCropped = stitched;
+                        }
+                    }
+                    
+                    performOcrSync(finalCropped);
+                }
+
+                // Finalize: Send text to translation
+                String finalText = continuousOcrBuilder.toString().trim();
+                handler.post(() -> {
+                    if (!finalText.isEmpty()) {
+                        latestOcrText = finalText;
+                        if (shouldCopyToClipboard) {
+                            copyToClipboard(latestOcrText);
+                            shouldCopyToClipboard = false;
+                        }
+                        translateText(latestOcrText);
+                    } else {
+                        Toast.makeText(FloatingTranslatorService.this, "No text found", Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
-
-            performOcr(finalCropped);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            // Fallback: Just OCR the stitched image without cropping
-            performOcr(longBitmap);
-        }
+        });
     }
 
+    // Helper for Background OCR (Appends to StringBuilder)
+    private void performOcrSync(Bitmap bitmap) {
+        if (bitmap == null) return;
+        TextRecognizer recognizer = new TextRecognizer.Builder(getApplicationContext()).build();
+        if (recognizer.isOperational()) {
+            Frame frame = new Frame.Builder().setBitmap(bitmap).build();
+            SparseArray<TextBlock> items = recognizer.detect(frame);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < items.size(); ++i) {
+                TextBlock item = items.valueAt(i);
+                sb.append(item.getValue()).append("\n");
+            }
+            
+            // FIX: Replace New Lines with Spaces for better translation
+            String text = sb.toString().replace("\n", " ");
+            
+            synchronized (continuousOcrBuilder) {
+                continuousOcrBuilder.append(text).append(" ");
+            }
+        }
+        recognizer.release();
+    }
+
+    // Standard OCR (Main Thread / Single Shot)
     private void performOcr(Bitmap bitmap) {
         TextRecognizer recognizer = new TextRecognizer.Builder(getApplicationContext()).build();
         if (!recognizer.isOperational()) {
@@ -467,10 +544,9 @@ public class FloatingTranslatorService extends Service {
             sb.append(item.getValue()).append("\n");
         }
 
-        // FIX: Replace New Lines with Spaces.
-        // This makes Google Translate see sentences instead of broken lists, improving accuracy.
+        // FIX: Replace New Lines with Spaces
         String extractedText = sb.toString().trim().replace("\n", " ");
-        
+
         if (!extractedText.isEmpty()) {
             latestOcrText = extractedText;
 
@@ -485,7 +561,6 @@ public class FloatingTranslatorService extends Service {
         }
         recognizer.release();
 
-        // Clean up
         capturedBitmaps.clear();
     }
 
